@@ -49,8 +49,24 @@ export default function App() {
     return localStorage.getItem('yt_loader_name_prefix') || 'Мое видео';
   });
   
-  const [accessToken, setAccessToken] = useState<string>('');
-  const [tokenExpiresAt, setTokenExpiresAt] = useState<number>(0);
+  const [accessToken, setAccessToken] = useState<string>(() => {
+    const savedToken = localStorage.getItem('yt_loader_access_token') || '';
+    const savedExpiresAt = localStorage.getItem('yt_loader_token_expires_at');
+    if (savedToken && savedExpiresAt && Date.now() < parseInt(savedExpiresAt) - 30 * 1000) {
+      return savedToken;
+    }
+    return '';
+  });
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<number>(() => {
+    const savedExpiresAt = localStorage.getItem('yt_loader_token_expires_at');
+    if (savedExpiresAt) {
+      const expiresAt = parseInt(savedExpiresAt);
+      if (Date.now() < expiresAt - 30 * 1000) {
+        return expiresAt;
+      }
+    }
+    return 0;
+  });
   const [channelInfo, setChannelInfo] = useState<{ name: string; avatar: string } | null>(null);
   
   // UI State
@@ -65,10 +81,23 @@ export default function App() {
   const [uploads, setUploads] = useState<VideoUpload[]>([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState<boolean>(false);
   
+  // Ref to hold the latest uploads list for asynchronous queue processing
+  const uploadsRef = useRef<VideoUpload[]>([]);
+  useEffect(() => {
+    uploadsRef.current = uploads;
+  }, [uploads]);
+
   // Ref to hold active uploads and cancel functions
   const cancelTokens = useRef<{ [key: string]: () => void }>({});
   const isUploadingBatchRef = useRef<boolean>(false);
   isUploadingBatchRef.current = isUploadingBatch;
+
+  // Load channel info on mount if a valid token already exists in localStorage
+  useEffect(() => {
+    if (accessToken && Date.now() < tokenExpiresAt - 30 * 1000) {
+      fetchChannelInfo(accessToken);
+    }
+  }, []);
 
   // Listen for Google OAuth callback message from the popup window
   useEffect(() => {
@@ -84,6 +113,11 @@ export default function App() {
           setAccessToken(token);
           const expiresAt = Date.now() + expiresIn * 1000;
           setTokenExpiresAt(expiresAt);
+          
+          // Save to localStorage for persistence
+          localStorage.setItem('yt_loader_access_token', token);
+          localStorage.setItem('yt_loader_token_expires_at', expiresAt.toString());
+
           setAuthError('');
           // Fetch channel info
           fetchChannelInfo(token);
@@ -158,6 +192,8 @@ export default function App() {
     setAccessToken('');
     setTokenExpiresAt(0);
     setChannelInfo(null);
+    localStorage.removeItem('yt_loader_access_token');
+    localStorage.removeItem('yt_loader_token_expires_at');
   };
 
   // Save Settings Modal
@@ -270,14 +306,8 @@ export default function App() {
     
     // Process one video at a time
     while (true) {
-      // Get the list of current uploads from state ref / query latest state
-      let nextToUpload: VideoUpload | undefined;
-      
-      // We need to fetch the fresh state of uploads
-      setUploads(currentUploads => {
-        nextToUpload = currentUploads.find(item => item.status === 'queued');
-        return currentUploads;
-      });
+      // Find the next queued item from our synchronized ref
+      const nextToUpload = uploadsRef.current.find(item => item.status === 'queued');
 
       if (!nextToUpload) {
         break;
@@ -289,6 +319,7 @@ export default function App() {
         await executeSingleUpload(activeId);
       } catch (error) {
         console.error(`Upload error for ID ${activeId}:`, error);
+        break; // Stop batch on critical error
       }
     }
 
@@ -298,16 +329,13 @@ export default function App() {
   // Promise wrapper to execute a single video upload and track status
   const executeSingleUpload = (id: string): Promise<void> => {
     return new Promise((resolve) => {
+      // Mark as uploading
       setUploads(current => 
         current.map(item => item.id === id ? { ...item, status: 'uploading' } : item)
       );
 
-      // Extract details
-      let activeItem: VideoUpload | undefined;
-      setUploads(current => {
-        activeItem = current.find(item => item.id === id);
-        return current;
-      });
+      // Extract details from synchronized ref
+      const activeItem = uploadsRef.current.find(item => item.id === id);
 
       if (!activeItem) {
         resolve();
