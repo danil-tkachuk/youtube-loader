@@ -10,7 +10,7 @@ interface UploadProgressEvent {
  */
 export function openGoogleOAuthPopup(clientId: string): Window | null {
   const redirectUri = window.location.origin;
-  const scope = 'https://www.googleapis.com/auth/youtube.upload';
+  const scope = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly';
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=consent`;
 
   const width = 600;
