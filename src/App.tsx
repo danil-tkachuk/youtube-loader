@@ -80,6 +80,7 @@ export default function App() {
   // Upload Queue State
   const [uploads, setUploads] = useState<VideoUpload[]>([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState<boolean>(false);
+  const [namingMode, setNamingMode] = useState<'global' | 'individual'>('global');
   
   // Ref to hold the latest uploads list for asynchronous queue processing
   const uploadsRef = useRef<VideoUpload[]>([]);
@@ -240,29 +241,14 @@ export default function App() {
       return;
     }
 
-    const newUploads: VideoUpload[] = videoFiles.map((file, index) => {
+    const newUploads: VideoUpload[] = videoFiles.map((file) => {
       const id = Math.random().toString(36).substring(2, 11);
       
-      // Calculate title
-      let calculatedName = namePrefix;
-      
-      if (videoFiles.length > 1) {
-        // If user input contains placeholder '{}' or '#', replace it
-        if (namePrefix.includes('{}')) {
-          calculatedName = namePrefix.replace('{}', (uploads.length + index + 1).toString());
-        } else if (namePrefix.includes('#')) {
-          calculatedName = namePrefix.replace('#', `#${uploads.length + index + 1}`);
-        } else {
-          // Otherwise, append part index
-          calculatedName = `${namePrefix} — Часть ${uploads.length + index + 1}`;
-        }
+      let calculatedName = '';
+      if (namingMode === 'global') {
+        calculatedName = namePrefix || file.name.replace(/\.[^/.]+$/, "");
       } else {
-        // Single file, if prefix has placeholder replace with 1, else use as-is
-        if (namePrefix.includes('{}')) {
-          calculatedName = namePrefix.replace('{}', '1');
-        } else {
-          calculatedName = namePrefix;
-        }
+        calculatedName = file.name.replace(/\.[^/.]+$/, "");
       }
 
       return {
@@ -300,6 +286,14 @@ export default function App() {
       alert('Срок действия сессии Google истек. Пожалуйста, авторизуйтесь снова.');
       handleSignIn();
       return;
+    }
+
+    if (namingMode === 'global') {
+      const updatedUploads = uploadsRef.current.map(item =>
+        item.status === 'queued' ? { ...item, name: namePrefix || item.name } : item
+      );
+      uploadsRef.current = updatedUploads;
+      setUploads(updatedUploads);
     }
 
     setIsUploadingBatch(true);
@@ -590,24 +584,48 @@ export default function App() {
             </h3>
             
             <div className="form-group">
-              <label>
-                Название видео
-                <span style={{ fontSize: '0.75rem', fontWeight: 'normal' }}>Шаблон: {} или #</span>
-              </label>
-              <div className="input-wrapper">
-                <input
-                  type="text"
-                  className="input-text"
-                  placeholder="Пример: Vlog {}"
-                  value={namePrefix}
-                  onChange={(e) => handleNamePrefixChange(e.target.value)}
-                />
-                <FileVideo className="input-icon" size={16} />
+              <label>Режим именования</label>
+              <div style={{ display: 'flex', gap: '16px', marginTop: '4px', paddingBottom: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="naming-mode"
+                    value="global"
+                    checked={namingMode === 'global'}
+                    onChange={() => setNamingMode('global')}
+                    style={{ accentColor: 'var(--color-primary)' }}
+                  />
+                  <span>Одно имя для всех</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 'normal' }}>
+                  <input
+                    type="radio"
+                    name="naming-mode"
+                    value="individual"
+                    checked={namingMode === 'individual'}
+                    onChange={() => setNamingMode('individual')}
+                    style={{ accentColor: 'var(--color-primary)' }}
+                  />
+                  <span>Раздельные имена</span>
+                </label>
               </div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                При загрузке нескольких файлов, скобки <code>{}</code> или <code>#</code> автоматически заменятся на порядковый номер.
-              </p>
             </div>
+
+            {namingMode === 'global' && (
+              <div className="form-group">
+                <label>Название видео</label>
+                <div className="input-wrapper">
+                  <input
+                    type="text"
+                    className="input-text"
+                    placeholder="Введите название для видео"
+                    value={namePrefix}
+                    onChange={(e) => handleNamePrefixChange(e.target.value)}
+                  />
+                  <FileVideo className="input-icon" size={16} />
+                </div>
+              </div>
+            )}
 
             <div className="locked-params-info">
               <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px', fontSize: '0.85rem' }}>
@@ -707,7 +725,29 @@ export default function App() {
                     {/* Item Top Row */}
                     <div className="item-top">
                       <div className="item-meta">
-                        <div className="item-name">{item.name}</div>
+                        {namingMode === 'individual' && item.status === 'queued' ? (
+                          <input
+                            type="text"
+                            className="input-text"
+                            value={item.name}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setUploads(current =>
+                                current.map(u => u.id === item.id ? { ...u, name: val } : u)
+                              );
+                            }}
+                            placeholder="Введите название видео"
+                            style={{
+                              padding: '6px 10px',
+                              fontSize: '0.9rem',
+                              marginTop: '4px',
+                              width: '100%',
+                              maxWidth: '320px',
+                            }}
+                          />
+                        ) : (
+                          <div className="item-name">{item.name}</div>
+                        )}
                         <div className="item-filename">
                           {item.file.name} • {formatSize(item.totalBytes)}
                         </div>
@@ -824,6 +864,32 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* Footer */}
+      <footer style={{
+        marginTop: '40px',
+        borderTop: '1px solid var(--border-light)',
+        paddingTop: '20px',
+        paddingBottom: '20px',
+        textAlign: 'center',
+        fontSize: '0.85rem',
+        color: 'var(--text-muted)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        alignItems: 'center'
+      }}>
+        <div>© 2026 YouTube Loader. Danil Tkachuk.</div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <a href="privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
+            Политика конфиденциальности
+          </a>
+          <span>•</span>
+          <a href="terms.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
+            Условия использования
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }
