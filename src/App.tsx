@@ -43,7 +43,7 @@ const Youtube = ({ size = 24, fill = "none", className, style }: { size?: number
 export default function App() {
   // Config & Auth State
   const [clientId, setClientId] = useState<string>(() => {
-    return import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('yt_loader_client_id') || '';
+    return localStorage.getItem('yt_loader_client_id') || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
   });
   const [namePrefix, setNamePrefix] = useState<string>(() => {
     return localStorage.getItem('yt_loader_name_prefix') || 'Мое видео';
